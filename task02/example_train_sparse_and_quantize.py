@@ -8,7 +8,8 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from torchvision.models import resnet101
-from sparseml.pytorch.datasets import CIFAR10
+# from sparseml.pytorch.datasets import CIFAR10
+from torchvision.datasets import CIFAR10
 from sparseml.pytorch.optim import ScheduledModifierManager
 from sparseml.pytorch.utils import export_onnx
 
