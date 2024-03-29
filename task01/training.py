@@ -8,6 +8,7 @@ def stop_criterion(accuracies, eps=0.01):
     That means that you must satisfy condition torch.abs(acc - acc_prev) < 0.01 
     for at least two epochs in a row.
     '''
+    # print(accuracies)
     if len(accuracies) < 3: return False
     acc1, acc2, acc3 = accuracies[0], accuracies[1], accuracies[2]
     return torch.abs(acc1 - acc2) < eps and torch.abs(acc2 - acc3) < eps
@@ -79,23 +80,22 @@ def evaluate(model,
 
 
 # distillation
-teacher_layer1_outputs = []
-teacher_layer2_outputs = []
-teacher_layer4_outputs = []
+# teacher_layer1_outputs = []
+# teacher_layer2_outputs = []
+# teacher_layer4_outputs = []
 
-student_layer1_outputs = []
-student_layer2_outputs = []
-student_layer4_outputs = []
+# student_layer1_outputs = []
+# student_layer2_outputs = []
+# student_layer4_outputs = []
+teacher_layer_outputs = dict()
+student_layer_outputs = dict()
+
 
 def hook_fn_teacher(module, input, output):
-    teacher_layer1_outputs.append(output[0])
-    teacher_layer2_outputs.append(output[1])
-    teacher_layer4_outputs.append(output[3])
+    teacher_layer_outputs[module] = output
 
 def hook_fn_student(module, input, output):
-    student_layer1_outputs.append(output[0])
-    student_layer2_outputs.append(output[1])
-    student_layer4_outputs.append(output[3])
+    student_layer_outputs[module] = output
 
 def distill(student,
             teacher,
@@ -118,7 +118,7 @@ def distill(student,
 
     student.layer1.register_forward_hook(hook_fn_student)
     student.layer2.register_forward_hook(hook_fn_student)
-    student.layer4.register_forward_hook
+    student.layer4.register_forward_hook(hook_fn_student)
 
     last_accuracies = []
     epoch, step = 0, 0
@@ -147,21 +147,13 @@ def distill(student,
             if mse:
                 #  MSE loss between corresponding layer1, layer2 and layer4 features of the student and the teacher
                 mse_loss = 0
-                mse_loss += mse_criterion(torch.as_tensor(student_layer1_outputs[0]), torch.as_tensor(teacher_layer1_outputs[0]))
-                mse_loss += mse_criterion(torch.as_tensor(student_layer2_outputs[0]), torch.as_tensor(teacher_layer2_outputs[0]))
-                mse_loss += mse_criterion(torch.as_tensor(student_layer4_outputs[0]), torch.as_tensor(teacher_layer4_outputs[0]))
+                mse_loss += mse_criterion(student_layer_outputs[student.layer1], teacher_layer_outputs[teacher.layer1])
+                mse_loss += mse_criterion(student_layer_outputs[student.layer2], teacher_layer_outputs[teacher.layer2])
+                mse_loss += mse_criterion(student_layer_outputs[student.layer4], teacher_layer_outputs[teacher.layer4])
                 total_loss += mse_loss
 
-            # saving my RTX3060 from OOM
-            teacher_layer1_outputs.clear()
-            teacher_layer2_outputs.clear()
-            teacher_layer4_outputs.clear()
-            student_layer1_outputs.clear()
-            student_layer2_outputs.clear()
-            student_layer4_outputs.clear()
-            torch.cuda.empty_cache()
-
-            current_loss += total_loss.item() / (logging_step * 3 if mse else logging_step * 2)
+            total_loss = total_loss / (3 if mse else 2)
+            current_loss += total_loss.item() / logging_step
             prediction = logits.argmax(dim=1)
             current_accuracy += (prediction == labels).sum() / logging_step / labels.shape[0]
 
@@ -169,15 +161,24 @@ def distill(student,
                 wandb.log({"loss_train": current_loss}, step=step)
                 wandb.log({"accuracy_train": current_accuracy}, step=step)
                 wandb.log({"epoch": epoch}, step=step)
-                wandb.log({"distillation_loss": distillation_loss.item() / logging_step}, step=step)
-                wandb.log({"clasffication_loss": classification_loss.item() / logging_step}, step=step)
+                wandb.log({"distillation_loss": distillation_loss.item()}, step=step)
+                wandb.log({"clasffication_loss": classification_loss.item()}, step=step)
                 
                 if mse:
-                    wandb.log({"mse_loss": mse_loss.item() / logging_step}, step=step)
+                    wandb.log({"mse_loss": mse_loss.item()}, step=step)
                 current_loss, current_accuracy = 0, 0
 
             total_loss.backward()
             optimizer.step()
+
+            # saving my RTX3060 from OOM
+            # teacher_layer1_outputs.clear()
+            # teacher_layer2_outputs.clear()
+            # teacher_layer4_outputs.clear()
+            # student_layer1_outputs.clear()
+            # student_layer2_outputs.clear()
+            # student_layer4_outputs.clear()
+            torch.cuda.empty_cache()
 
         epoch += 1
         test_accuracy = evaluate(student, test_loader, device, step)
