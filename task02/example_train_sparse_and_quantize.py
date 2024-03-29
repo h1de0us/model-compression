@@ -123,7 +123,7 @@ def main():
     # Training Loop
     pbar = tqdm(range(manager.max_epochs), desc="epoch")
     for epoch in pbar:
-        epoch_loss, epoch_acc = train_one_epoch(model, train_loader, optimizer, criterion)
+        epoch_loss, epoch_acc = train_one_epoch(model, train_loader, optimizer, criterion, device)
         epoch_test_acc = evaluate(model, test_loader, device)
         pbar.set_description(f"Training loss: {epoch_loss:.3f}  Training accuracy: {epoch_acc:.3f}  Testing accuracy: {epoch_test_acc:.3f}")
 
